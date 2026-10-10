@@ -5,8 +5,10 @@
   (text, page images, handwriting thumbnails) from the local Samsung Notes for
   Windows database. Built 2026-06-08 with Claude Code; owners are typically
   non-developers — explain things click-by-click and run commands for them.
-- Language/runtime: Python 3.14, single file `server.py` (deps: `mcp[cli]`, `pillow`)
-- Docs: `README.md` (technical), `MANUAL.md` (Korean, for the owner — keep it non-technical)
+- Language/runtime: Python 3.14, single file `server.py` (deps: `mcp[cli]<2`, `pillow`, `av`,
+  installed into `.venv` by `setup.ps1` — mcp 2.x renamed FastMCP and breaks the import)
+- Docs: `README.md` (English; user guide + technical notes). Installer: `install.bat` → `setup.ps1`
+- English port of https://github.com/kraewon7422/samsung-notes-mcp (MIT)
 
 ## Architecture
 ```
@@ -23,7 +25,7 @@ Galaxy Tab/phone → Samsung Cloud → Samsung Notes Windows app
 ## Moving parts (where to look when debugging)
 | Part | Location |
 |---|---|
-| Server | `server.py` here; 10 tools, all read-only |
+| Server | `server.py` here; 11 tools, all read-only |
 | Secret URL token | `http_secret.txt` here (gitignored; rotate = delete + restart task + re-add connector) |
 | HTTP server log | `server.log` here (only written in --http mode under pythonw) |
 | Auto-start | Windows Scheduled Task `SamsungNotesMCP` (runs `pythonw server.py --http` at logon) |
@@ -43,7 +45,7 @@ Stop-ScheduledTask -TaskName SamsungNotesMCP; Start-ScheduledTask -TaskName Sams
 #   Accept: application/json, text/event-stream
 #   to https://<funnel hostname from `tailscale funnel status`>/<secret from http_secret.txt>/mcp
 # Tools can also be tested directly (they're plain sync functions):
-python -c "import server; print(server.samsung_notes_recent(3))"
+.\.venv\Scripts\python.exe -c "import server; print(server.samsung_notes_recent(3))"
 ```
 
 ## Key decisions / hard-won gotchas (do not rediscover these)
@@ -53,8 +55,8 @@ python -c "import server; print(server.samsung_notes_recent(3))"
   (never lock the live DB); wdoc format is undocumented — writing risks corrupting sync.
 - **421 from funnel**: MCP SDK DNS-rebinding protection only allows localhost by
   default; server adds the Tailscale DNSName to `allowed_hosts` at startup.
-- **cp949 trap**: this is Korean Windows — any `subprocess` capture needs
-  `encoding="utf-8"`, or it crashes/returns None on non-ASCII output.
+- **Encoding trap**: on non-UTF-8 Windows locales (e.g. Korean cp949) any `subprocess`
+  capture needs `encoding="utf-8"`, or it crashes/returns None on non-ASCII output.
 - **pythonw trap**: `sys.stdout/stderr` are `None` under the scheduled task;
   server redirects them to `server.log` in --http mode. Don't add bare prints.
 - **Handwriting**: pen strokes live in undocumented `.page`/`note.note` binaries.
@@ -67,6 +69,9 @@ python -c "import server; print(server.samsung_notes_recent(3))"
   first-page thumbnail (`samsung_notes_get_thumbnail`). Page JPGs (`wdoc\<uuid>\`
   or `media\` subfolder; `N@` prefix = page order) are imported PDF/photo
   backgrounds WITHOUT strokes (`samsung_notes_get_page_image`).
+- **Voice recordings**: `.m4a` in `wdoc\<uuid>\media\` (`N@` prefix = order);
+  NoteDB.VoiceName labels them. Listed only — local transcription (faster-whisper)
+  was tried and dropped as too slow; also faster-whisper 1.2.1 breaks with av>=17.
 - **Locked notes** are listed but content is encrypted; **freshness** depends on
   the Samsung Notes Windows app having synced (open the app to force it).
 
@@ -76,15 +81,6 @@ python -c "import server; print(server.samsung_notes_recent(3))"
 3. 421 on public URL → funnel hostname changed (re-check `tailscale status --json` DNSName)
 4. Everything broken after Samsung Notes app update → package folder name or DB
    schema changed; re-verify the glob and table columns (NoteDB, CategoryTreeDB, TextSearchDB)
-
-## Publishing updates to GitHub (https://github.com/kraewon7422/samsung-notes-mcp)
-This local repo's history contains personal info (old docs with the owner's
-hostname/paths, work email in commit authors) — **never push it directly.**
-To publish an update: copy the 7 distributable files (server.py, README.md,
-MANUAL.md, CLAUDE.md, .gitignore, setup.ps1, 설치하기.bat) to a temp dir,
-clone/pull the GitHub repo there, commit as
-`kraewon7422 <kraewon7422@users.noreply.github.com>`, push to `main`
-(auth: `gh` CLI, already logged in). Never copy `http_secret.txt`/`server.log`.
 
 ## Don'ts
 - Never write to Storage.sqlite or anything under the Samsung Notes package folder

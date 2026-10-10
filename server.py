@@ -258,6 +258,37 @@ def _note_pdfs(note_dir: Path) -> list[Path]:
     return sorted(p for p in candidates if p.suffix.lower() == ".pdf")
 
 
+AUDIO_EXTS = {".m4a", ".3ga", ".amr", ".aac", ".mp3", ".wav", ".ogg"}
+
+
+def _note_recordings(note_dir: Path) -> list[Path]:
+    """Voice recordings attached to a note (stored under media/ like images,
+    with the same '<index>@' order prefix)."""
+    if not note_dir.is_dir():
+        return []
+    candidates = list(note_dir.iterdir())
+    media = note_dir / "media"
+    if media.is_dir():
+        candidates += list(media.iterdir())
+    recs = [p for p in candidates if p.suffix.lower() in AUDIO_EXTS]
+
+    def order(p: Path) -> tuple[int, str]:
+        m = _PAGE_PREFIX.match(p.name)
+        return (int(m.group(1)) if m else 10**9, p.name)
+
+    return sorted(recs, key=order)
+
+
+def _audio_seconds(path: Path) -> float | None:
+    """Duration from the container header (via PyAV)."""
+    try:
+        import av
+        with av.open(str(path)) as c:
+            return round(c.duration / 1_000_000, 1) if c.duration else None
+    except Exception:
+        return None
+
+
 def _scaled_jpeg(path: Path, max_width: int) -> Image:
     img = PILImage.open(path)
     if img.width > max_width:
@@ -322,7 +353,7 @@ def samsung_notes_list_notes(folder: str = "", top: int = 50) -> str:
     """List notes, newest first.
 
     Args:
-        folder: folder name (e.g. "수학") or folder UUID; empty = all folders
+        folder: folder name (e.g. "Math") or folder UUID; empty = all folders
         top: max results (default 50, max 200)
     """
     top = max(1, min(top, 200))
@@ -390,6 +421,9 @@ def samsung_notes_read_note(note_id: str) -> str:
             "page_image_count": len(images),
             **_texts(r),
         }
+        recs = _note_recordings(Path(r["FilePath"])) if r["FilePath"] else []
+        if recs:
+            result["recording_count"] = len(recs)
         if r["IsLocked"]:
             result["locked"] = True
         result["hint"] = (
@@ -397,6 +431,7 @@ def samsung_notes_read_note(note_id: str) -> str:
             "samsung_notes_get_page (rendered WITH pen strokes, all pages). "
             "samsung_notes_get_page_image / samsung_notes_list_note_images return "
             "only imported PDF/photo backgrounds without strokes."
+            + (" Voice recordings: samsung_notes_list_recordings." if recs else "")
         )
         return _json(result)
     finally:
@@ -409,7 +444,7 @@ def samsung_notes_search(query: str, top: int = 20) -> str:
     text boxes.
 
     Args:
-        query: keyword to search for (e.g. "다항식", "회의록")
+        query: keyword to search for (e.g. "polynomial", "meeting minutes")
         top: max results (default 20, max 50)
     """
     top = max(1, min(top, 50))
@@ -607,6 +642,39 @@ def samsung_notes_get_page(note_id: str, page: int = 0, max_width: int = 1024) -
             "are ready.)"
         )
     return _scaled_jpeg(path, max(64, min(max_width, 2048)))
+
+
+@mcp.tool(annotations={"readOnlyHint": True})
+def samsung_notes_list_recordings(note_id: str) -> str:
+    """List a note's voice recordings (audio attached in Samsung Notes), in
+    order, with durations and the audio file path on this PC.
+
+    Args:
+        note_id: note UUID or a unique title substring
+    """
+    con = _connect()
+    try:
+        r = _resolve_note(con, note_id)
+    finally:
+        con.close()
+    recs = _note_recordings(Path(r["FilePath"])) if r["FilePath"] else []
+    return _json(
+        {
+            "id": r["UUID"],
+            "title": _clean(r["Title"]) or "(untitled)",
+            "recording_count": len(recs),
+            "recordings": [
+                {
+                    "recording": i,
+                    "file": p.name,
+                    "path": str(p),
+                    "size_mb": round(p.stat().st_size / 1_048_576, 1),
+                    "duration_seconds": _audio_seconds(p),
+                }
+                for i, p in enumerate(recs)
+            ],
+        }
+    )
 
 
 if __name__ == "__main__":

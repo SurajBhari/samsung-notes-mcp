@@ -1,117 +1,128 @@
-# 삼성 노트 × Claude (Samsung Notes MCP)
+# Samsung Notes × Claude (Samsung Notes MCP)
 
-Claude(클로드)가 **내 삼성 노트를 직접 읽을 수 있게** 해주는 도구입니다.
+Lets Claude **read your Samsung Notes directly**. English port of
+[kraewon7422/samsung-notes-mcp](https://github.com/kraewon7422/samsung-notes-mcp) (MIT).
 
-- 갤럭시 탭/폰에서 쓴 노트도 보입니다 (삼성 클라우드 → 내 PC의 삼성 노트 앱으로 자동 동기화되기 때문)
-- **전부 내 컴퓨터 안에서만 동작**합니다 — 노트가 외부 서버로 전송되지 않습니다
-- **읽기 전용**입니다 — Claude가 노트를 수정하거나 지우는 것은 불가능합니다
+- Notes written on a Galaxy tablet/phone show up too (Samsung Cloud syncs them to the Samsung Notes app on this PC)
+- **Runs entirely on your computer** — notes are not sent to any outside server
+- **Read-only** — Claude cannot edit or delete notes
 
-이런 게 가능해집니다:
+Example:
 
-> "수학 폴더에서 이차방정식 노트 찾아서 첫 페이지 보여줘" → Claude가 **내 손글씨 풀이를 보고** 채점해 줌
+> "Find the quadratic equations note in my Math folder and show me the first page" → Claude **looks at your handwritten working** and grades it
 
 ---
 
-## 준비물
+## Requirements
 
-| 필요한 것 | 설명 |
+| What | Notes |
 |---|---|
 | Windows PC | Windows 10/11 |
-| 삼성 노트 앱 (PC용) | Microsoft Store에서 "Samsung Notes" 설치 → 삼성 계정 로그인 → 동기화 확인 |
-| Claude Desktop 또는 Claude Code | [claude.ai/download](https://claude.ai/download) |
-| Python 3.10 이상 | 없으면 설치 프로그램이 자동으로 설치해 줍니다 |
+| Samsung Notes (PC app) | Install "Samsung Notes" from the Microsoft Store → sign in to your Samsung account → confirm notes have synced |
+| Claude Desktop or Claude Code | [claude.ai/download](https://claude.ai/download) |
+| Python 3.10+ | The installer installs it if missing |
 
-> ⚠️ 갤럭시(삼성 노트) 사용자 전용입니다. PC의 삼성 노트 앱에서 내 노트가 보여야 합니다.
+## Install
 
-## 설치 (3분, 클릭만 하면 됨)
+Double-click **`install.bat`** (if Windows SmartScreen warns you: **More info** → **Run anyway**).
+When it says **"Setup complete"**, restart Claude Desktop / start a new Claude Code session.
 
-1. 이 페이지 위쪽 초록색 **`<> Code`** 버튼 → **Download ZIP** 클릭
-2. 내려받은 ZIP을 **압축 풀기** (예: 문서 폴더에)
-3. 압축 푼 폴더에서 **`설치하기.bat`** 더블클릭
-   - "Windows의 PC 보호" 경고가 뜨면: **추가 정보** → **실행** 클릭
-4. 창에 **"설치 완료"** 가 나오면 끝. Claude Desktop을 껐다 켜세요.
+The installer creates a private `.venv` in this folder with `mcp<2`, `pillow`
+and `av` (the server uses the mcp v1 `FastMCP` API, which mcp 2.x renamed; `av` reads
+recording durations), then registers
+the server as `samsung-notes` in Claude Desktop and Claude Code.
 
-## 사용법 — 그냥 말하면 됩니다
+## Usage — just ask
 
-| 하고 싶은 것 | Claude에게 하는 말 |
+| You want to | Say to Claude |
 |---|---|
-| 폴더 보기 | "내 삼성 노트 폴더 보여줘" |
-| 노트 목록 | "수학 폴더에 뭐 있어?" |
-| 검색 | "삼성 노트에서 한국사 검색해줘" |
-| 노트 읽기 | "○○ 노트 내용 읽어줘" |
-| 손글씨 보기 (첫 페이지) | "○○ 노트 첫 페이지 보여줘" |
-| 손글씨 보기 (모든 페이지) | "○○ 노트 3페이지 보여줘" / "페이지 목록 보여줘" |
-| 채점 받기 | "이 노트 5페이지 보고 내 풀이 채점해줘" |
-| 요약 | "○○ 노트 요약해줘" |
+| See folders | "Show my Samsung Notes folders" |
+| List notes | "What's in my Math folder?" |
+| Recent notes | "Show the 5 notes I edited most recently" |
+| Search | "Search my Samsung Notes for history" |
+| Read a note | "Read the ○○ note" |
+| See handwriting (first page) | "Show the first page of the ○○ note" |
+| See handwriting (any page) | "Show page 3 of the ○○ note" / "List that note's pages" |
+| Get graded | "Look at page 5 of this note and grade my solutions" |
+| Summarise | "Summarise the ○○ note" |
+| Voice recordings | "Does the ○○ note have recordings? Where are they?" |
 
-## 문제 해결
+## Tools (11, all read-only)
 
-| 증상 | 해결 |
+| Tool | What it does |
 |---|---|
-| Claude가 "도구가 없다"고 함 | Claude Desktop 재시작 / Claude Code는 새 세션 시작 |
-| 새로 쓴 노트가 안 보임 | PC의 삼성 노트 앱을 한 번 열어 동기화시키기 |
-| "삼성 노트 앱이 없습니다" 오류 | Microsoft Store에서 Samsung Notes 설치 후 삼성 계정 로그인 |
-| 설치 중 Python 설치됨 → 멈춤 | `설치하기.bat`를 한 번 더 실행 |
-| 그 외 | Claude Code에게 "이 폴더의 MCP 서버가 안 돼, 고쳐줘"라고 하면 됩니다 (CLAUDE.md에 디버깅 정보가 들어 있음) |
+| `samsung_notes_list_folders` | All folders with note counts |
+| `samsung_notes_list_notes` | Notes in a folder (or all), newest first |
+| `samsung_notes_recent` | Most recently modified notes |
+| `samsung_notes_read_note` | Metadata + typed text, PDF text, text boxes |
+| `samsung_notes_search` | Keyword search across titles and text |
+| `samsung_notes_list_note_images` | Imported PDF/photo page backgrounds (no pen strokes) |
+| `samsung_notes_get_page_image` | One of those background images |
+| `samsung_notes_get_thumbnail` | First page as rendered by the app, **with handwriting** |
+| `samsung_notes_list_pages` | Every page and whether its handwriting render is available |
+| `samsung_notes_get_page` | Any page rendered **with handwriting** |
+| `samsung_notes_list_recordings` | A note's voice recordings: file path, size, duration (not transcribed) |
 
-## 보안 · 개인정보
+## Troubleshooting
 
-- 노트 데이터는 **내 컴퓨터 밖으로 나가지 않습니다.** 이 프로그램에는 서버나 계정이 없습니다.
-  (Claude와의 대화에서 Claude가 읽은 내용은 일반 대화와 동일하게 처리됩니다)
-- 읽기 전용: 원본 노트 데이터베이스는 절대 수정하지 않습니다 (읽기 전 임시 복사본 사용).
-- 잠금(비밀번호) 설정된 노트의 내용은 암호화되어 있어 읽을 수 없습니다.
+| Symptom | Fix |
+|---|---|
+| Claude says the tool doesn't exist | Restart Claude Desktop / start a new Claude Code session |
+| New notes are missing | Open the Samsung Notes app on this PC once so it syncs |
+| "Samsung Notes is not installed" | Install Samsung Notes from the Microsoft Store and sign in |
+| Python got installed, then setup stopped | Run `install.bat` once more |
+| "That page isn't ready yet" | Open the note in the Samsung Notes PC app and scroll to that page once (Samsung only saves images of pages you've viewed) |
+| Anything else | Ask Claude Code "the MCP server in this folder isn't working, fix it" — `CLAUDE.md` has debugging notes |
 
-## 한계
+## Security & privacy
 
-- **손글씨**는 텍스트로 변환되지 않습니다. 대신 손글씨가 그려진 화면을 Claude가 이미지로 직접 봅니다.
-  (PDF 위에 필기한 노트는 PDF의 텍스트는 추출됩니다)
-- **첫 페이지 이후의 손글씨 페이지**도 볼 수 있습니다. 단, 삼성 노트 앱은 **PC에서 한 번 열어 그 페이지까지 넘겨 본** 페이지만 이미지로 저장합니다. 아직 안 본 페이지는 "페이지 목록 보여줘"에서 *아직 준비 안 됨*으로 표시되며, PC 앱에서 그 노트를 열어 끝까지 넘기면 볼 수 있게 됩니다. (저장되는 이미지 해상도는 가로 약 286px로 다소 낮습니다)
-- PC 삼성 노트 앱이 마지막으로 동기화한 시점까지의 노트가 보입니다.
+- Note data never leaves your computer. The program has no server or account.
+  (What Claude reads during a conversation is handled like any other conversation content.)
+- Read-only: the original note database is never modified (it's copied to a temp file before every read).
+- Locked (password-protected) notes are encrypted and can't be read.
+
+## Limitations
+
+- **Handwriting** isn't converted to text. Claude looks at the rendered page as an image instead.
+  (For notes written on top of a PDF, the PDF's text is extracted.)
+- Handwritten pages **after the first** only exist as images once you've opened the note in the
+  **PC** app and scrolled to that page. Unviewed pages show as *not ready* in the page list.
+  These cached images are low resolution (~286 px wide).
+- **Voice recordings** are listed (path, size, length) but not transcribed.
+- You see notes as of the PC app's last sync.
 
 ---
 
-## 고급: 태블릿이나 claude.ai 웹에서 쓰기 (선택)
+## Advanced: use from a tablet or claude.ai web (optional, not set up)
 
-기본 설치는 **내 PC의 Claude에서만** 동작합니다. 갤럭시 탭의 Claude 앱이나 claude.ai 웹에서도 쓰려면, **본인 PC를 본인의 Tailscale 계정으로** 인터넷에 공개해야 합니다 (유료 Claude 요금제 필요):
+The default install works **only with Claude on this PC**. To use it from the Claude app
+on a Galaxy tab or from claude.ai, you'd expose this PC through **your own Tailscale account**
+(needs a paid Claude plan):
 
 ```powershell
-# 1. Tailscale 설치 + 본인 계정 로그인 (https://tailscale.com)
-# 2. 서버를 HTTP 모드로 실행 (비밀 주소가 자동 생성됨)
-python server.py --http
-# 3. 터널 켜기
+# 1. Install Tailscale and sign in (https://tailscale.com)
+# 2. Run the server in HTTP mode (a secret URL is generated automatically)
+.\.venv\Scripts\python.exe server.py --http
+# 3. Turn on the tunnel
 tailscale funnel --bg 8788
-# 4. 만들어진 주소를 Claude에 등록 (아래 참고)
+# 4. Add the URL in claude.ai → Settings → Connectors → Add custom connector:
+#    https://<your funnel host>/<value in http_secret.txt>/mcp
 ```
 
-**주소 등록하는 곳** (PC가 아니라 **claude.ai 사이트**에 등록합니다):
-
-1. 크롬에서 [claude.ai](https://claude.ai) 접속 → 왼쪽 아래 내 이름 → **Settings(설정)**
-2. **Connectors(커넥터)** → **Add custom connector(커스텀 커넥터 추가)**
-3. URL 칸에 붙여넣기: `https://<내 funnel 주소>/<http_secret.txt 안의 비밀값>/mcp`
-4. **Add** 클릭 → 끝. claude.ai 웹과 폰/태블릿 Claude 앱에 자동으로 나타납니다.
-
-⚠️ 이렇게 하면 비밀 URL을 아는 사람은 누구나 내 노트를 읽을 수 있습니다. URL을 절대 공유하지 마세요. 잘 모르겠으면 기본(로컬) 설치만 쓰는 것을 권합니다.
+⚠️ Anyone who has that secret URL can read your notes. Never share it. If unsure, stick with the local install.
+To rotate it: delete `http_secret.txt`, restart the server, and re-add the connector.
 
 ---
 
-## Technical notes (English)
+## Technical notes
 
 - Single-file MCP server (`server.py`, Python, FastMCP) over the Samsung Notes
   for Windows local database: `%LOCALAPPDATA%\Packages\SAMSUNGELECTRONICSCoLtd.SamsungNotes_*\LocalState`
-  (`Storage.sqlite` for metadata/text, `wdoc\<uuid>\` for page images/PDFs).
-- 10 read-only tools: list folders/notes/recent, read note (typed + PDF + textbox text),
-  keyword search, list page images, get page image (imported PDF/photo backgrounds,
-  downscaled), get rendered first-page thumbnail (includes pen strokes), plus
-  `list_pages` / `get_page` to view **any** page rendered with handwriting.
+  (`Storage.sqlite` for metadata/text, `wdoc\<uuid>\` for page images/PDFs;
+  voice recordings are `.m4a` files in `wdoc\<uuid>\media\` with the same `N@` order prefix).
 - Handwritten pages beyond the first come from the app's own per-page render cache
-  (`Thumbnail\<note-uuid>\<n>\<page-uuid>.jpeg`), ordered via `PageDB`. Samsung only
-  writes a page's render after it is opened/scrolled in the Windows app, so
-  `get_page` reports which pages are not yet rendered instead of guessing.
+  (`Thumbnail\<note-uuid>\<n>\<page-uuid>.jpeg`), ordered via `PageDB`.
 - The live DB is snapshot-copied to `%TEMP%` before every read — the Samsung
   Notes app never sees a lock, and nothing is ever written to its data.
-- Optional `--http` mode serves streamable HTTP on `127.0.0.1:8788` with a
-  secret URL path (`http_secret.txt`, generated on first run, gitignored) for
-  use behind a tunnel as a claude.ai custom connector.
 - The OneNote/Microsoft Graph route does **not** work for Samsung Notes
   (Microsoft retired the OneNote feed) — that's why this reads the local DB.
-- See `CLAUDE.md` for debugging context (designed for Claude Code).
