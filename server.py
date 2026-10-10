@@ -196,13 +196,26 @@ def _ordered_page_uuids(con: sqlite3.Connection, document_uuid: str) -> list[str
     PageDB.documentUUID groups a note's pages; the literal `index` column is
     unused (always 0), but ascending `_id` matches Samsung's own page order
     file (pageIdInfo.dat), so we order by that. Deleted pages are skipped.
+
+    Some installs leave PageDB empty (notes written on a phone/tablet and
+    never opened on the PC); then the order comes from pageIdInfo.dat itself,
+    which stores each page UUID as a '$'-prefixed UTF-16LE string.
     """
-    return [
+    pages = [
         row["UUID"]
         for row in con.execute(
             'select UUID from PageDB where documentUUID=? and isDeleted=0 order by _id',
             (document_uuid,),
         ).fetchall()
+    ]
+    if pages:
+        return pages
+    info = _local_state_dir() / "wdoc" / document_uuid / "pageIdInfo.dat"
+    if not info.is_file():
+        return []
+    return [
+        m.decode("utf-16-le")
+        for m in re.findall(rb"\$\x00((?:[0-9a-f-]\x00){36})", info.read_bytes())
     ]
 
 
@@ -256,6 +269,53 @@ def _note_pdfs(note_dir: Path) -> list[Path]:
     if media.is_dir():
         candidates += list(media.iterdir())
     return sorted(p for p in candidates if p.suffix.lower() == ".pdf")
+
+
+# A note's wdoc folder holds the same files as an exported .sdocx (which is a
+# zip of them), so zipping a temp copy lets the reverse-engineered sdocx
+# renderer draw every page's pen strokes — no app-side render cache needed.
+# The renderer is optional: node + render/node_modules (install.bat sets it up).
+_RENDER_DIR = Path(__file__).resolve().parent / "render"
+
+
+def _renderer_ready() -> bool:
+    return bool(shutil.which("node")) and (_RENDER_DIR / "node_modules" / "@twango" / "sdocx").is_dir()
+
+
+def _sdocx_render(note_dir: Path, page: int | None = None) -> tuple[int, bytes | None]:
+    """Run render/render.mjs on a zipped copy of note_dir. Returns the visible
+    page count and, if `page` is given and in range, that page as SVG bytes."""
+    import subprocess
+    import zipfile
+
+    with tempfile.TemporaryDirectory(prefix="samsung_notes_mcp_") as tmp:
+        sdocx = Path(tmp) / "note.sdocx"
+        with zipfile.ZipFile(sdocx, "w") as z:
+            for p in note_dir.rglob("*"):
+                if p.is_file():
+                    z.write(p, p.relative_to(note_dir).as_posix())
+        out = Path(tmp) / "page.svg"
+        args = [shutil.which("node"), str(_RENDER_DIR / "render.mjs"), str(sdocx)]
+        if page is not None:
+            args += [str(page), str(out)]
+        proc = subprocess.run(
+            args, capture_output=True, timeout=120, encoding="utf-8", errors="replace",
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),  # no console flash under pythonw
+        )
+        if proc.returncode != 0:
+            raise RuntimeError(f"sdocx renderer failed: {proc.stderr.strip()[-500:]}")
+        count = json.loads(proc.stdout.strip().splitlines()[-1])["page_count"]
+        return count, (out.read_bytes() if out.exists() else None)
+
+
+def _svg_page_image(svg: bytes, max_width: int) -> Image:
+    import pymupdf
+
+    with pymupdf.open(stream=svg, filetype="svg") as doc:
+        page = doc[0]
+        zoom = max_width / page.rect.width
+        pix = page.get_pixmap(matrix=pymupdf.Matrix(zoom, zoom))
+        return Image(data=pix.tobytes("jpeg", jpg_quality=80), format="jpeg")
 
 
 AUDIO_EXTS = {".m4a", ".3ga", ".amr", ".aac", ".mp3", ".wav", ".ogg"}
@@ -560,10 +620,10 @@ def samsung_notes_list_pages(note_id: str) -> str:
     available right now.
 
     Unlike the imported backgrounds from samsung_notes_list_note_images, these
-    are the app's per-page renders WITH your pen strokes. The catch: Samsung
-    Notes only creates a page's render after you open that note and scroll past
-    the page in the Samsung Notes Windows app. Pages you have never viewed on
-    this PC show available=false until you do.
+    pages include your pen strokes. With the sdocx renderer installed (default
+    setup) every non-blank page is available. Without it, only pages the
+    Samsung Notes Windows app has cached (opened and scrolled past on this PC)
+    are available.
 
     Use samsung_notes_get_page(note_id, page) to fetch an available page.
 
@@ -574,6 +634,22 @@ def samsung_notes_list_pages(note_id: str) -> str:
     try:
         r = _resolve_note(con, note_id)
         names = _folder_names(con)
+        if _renderer_ready() and r["FilePath"] and not r["IsLocked"]:
+            try:
+                count, _ = _sdocx_render(Path(r["FilePath"]))
+                return _json(
+                    {
+                        "id": r["UUID"],
+                        "title": _clean(r["Title"]) or "(untitled)",
+                        "folder": names.get(r["CategoryUUID"], ""),
+                        "page_count": count,
+                        "handwriting_images_available": count,
+                        "pages": [{"page": i, "available": True} for i in range(count)],
+                        "hint": "Blank pages are skipped. Use samsung_notes_get_page(note_id, page) to view any page.",
+                    }
+                )
+            except Exception:
+                pass  # fall back to the app's render cache below
         page_uuids = _ordered_page_uuids(con, r["UUID"])
         if not page_uuids:
             # Single-page note with no PageDB rows: the first-page thumbnail is it.
@@ -612,25 +688,33 @@ def samsung_notes_list_pages(note_id: str) -> str:
 
 @mcp.tool(annotations={"readOnlyHint": True})
 def samsung_notes_get_page(note_id: str, page: int = 0, max_width: int = 1024) -> Image:
-    """Return one page of a note as rendered by the app, INCLUDING handwriting /
-    pen strokes — the way to read handwritten pages beyond the first.
+    """Return one page of a note INCLUDING handwriting / pen strokes — the way
+    to read handwritten pages.
 
-    Page order matches samsung_notes_list_pages. A page is only available after
-    it has been opened/scrolled in the Samsung Notes Windows app; if it has not
-    been rendered yet this raises an error telling you to do that. Page 0 falls
-    back to the note's first-page thumbnail.
-
-    Note: these per-page renders are modest resolution (~286 px wide) — that is
-    all Samsung caches — so max_width only downscales, never upscales.
+    Page order matches samsung_notes_list_pages. With the sdocx renderer
+    installed (default setup) any page is drawn straight from the note's stroke
+    data at max_width. Without it, this falls back to the Samsung Notes app's
+    own cache: low resolution (~286 px) and only for pages opened/scrolled in
+    the Windows app; page 0 falls back to the first-page thumbnail.
 
     Args:
         note_id: note UUID or a unique title substring
         page: 0-based page index (see samsung_notes_list_pages)
-        max_width: downscale to this width in px (default 1024)
+        max_width: image width in px (default 1024)
     """
+    max_width = max(64, min(max_width, 2048))
     con = _connect()
     try:
         r = _resolve_note(con, note_id)
+        if _renderer_ready() and r["FilePath"] and not r["IsLocked"]:
+            try:
+                count, svg = _sdocx_render(Path(r["FilePath"]), max(page, 0))
+            except Exception:
+                count = None  # fall back to the app's render cache below
+            if count is not None:
+                if svg is None or page < 0:
+                    raise ValueError(f"page must be 0..{count - 1} (note has {count} non-blank pages).")
+                return _svg_page_image(svg, max_width)
         path = _resolve_page_render(con, r, page)
     finally:
         con.close()

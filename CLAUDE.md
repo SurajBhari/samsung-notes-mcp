@@ -5,7 +5,7 @@
   (text, page images, handwriting thumbnails) from the local Samsung Notes for
   Windows database. Built 2026-06-08 with Claude Code; owners are typically
   non-developers — explain things click-by-click and run commands for them.
-- Language/runtime: Python 3.14, single file `server.py` (deps: `mcp[cli]<2`, `pillow`, `av`,
+- Language/runtime: Python 3.14, single file `server.py` (deps: `mcp[cli]<2`, `pillow`, `av`, `pymupdf`; optional node + `render/`,
   installed into `.venv` by `setup.ps1` — mcp 2.x renamed FastMCP and breaks the import)
 - Docs: `README.md` (English; user guide + technical notes). Installer: `install.bat` → `setup.ps1`
 - English port of https://github.com/kraewon7422/samsung-notes-mcp (MIT)
@@ -60,15 +60,16 @@ Stop-ScheduledTask -TaskName SamsungNotesMCP; Start-ScheduledTask -TaskName Sams
 - **pythonw trap**: `sys.stdout/stderr` are `None` under the scheduled task;
   server redirects them to `server.log` in --http mode. Don't add bare prints.
 - **Handwriting**: pen strokes live in undocumented `.page`/`note.note` binaries.
-  The app renders each page (with strokes) only when opened/scrolled in the
-  Windows app, caching it at `Thumbnail\<note-uuid>\<n>\<page-uuid>.jpeg` (`<n>`=0
-  in practice). `samsung_notes_list_pages` / `samsung_notes_get_page` read that
-  cache; page order = `PageDB` rows for the note ordered by `_id` (the `index`
-  column is unused/0, but `_id` order matches Samsung's `pageIdInfo.dat`).
-  Coverage is partial — only viewed pages are cached; page 0 falls back to the
-  first-page thumbnail (`samsung_notes_get_thumbnail`). Page JPGs (`wdoc\<uuid>\`
-  or `media\` subfolder; `N@` prefix = page order) are imported PDF/photo
-  backgrounds WITHOUT strokes (`samsung_notes_get_page_image`).
+  A note's `wdoc\<uuid>\` folder is an unzipped `.sdocx`; `_sdocx_render` zips a
+  temp copy and runs `render/render.mjs` (node + `@twango/sdocx` WASM, GPL-3.0,
+  separate process) → SVG → `pymupdf` raster. sdocx clips to the note's page size
+  (often 1080 px) but tablet strokes can use a 1600 px canvas — render.mjs grows the
+  SVG viewport to the stroke bboxes; don't remove that. sdocx skips trailing blank pages.
+  Page order: `PageDB` by `_id`, else UUIDs parsed from `pageIdInfo.dat` ('$' +
+  UTF-16LE). Fallback without node: app cache `Thumbnail\<note-uuid>\<n>\<page-uuid>.jpeg`
+  (~286 px; recent app versions may never write it — verified empty on one PC even
+  after opening/scrolling). Page JPGs in `wdoc\<uuid>\` / `media\` (`N@` prefix =
+  page order) are imported PDF/photo backgrounds WITHOUT strokes.
 - **Voice recordings**: `.m4a` in `wdoc\<uuid>\media\` (`N@` prefix = order);
   NoteDB.VoiceName labels them. Listed only — local transcription (faster-whisper)
   was tried and dropped as too slow; also faster-whisper 1.2.1 breaks with av>=17.

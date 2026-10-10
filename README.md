@@ -21,16 +21,18 @@ Example:
 | Samsung Notes (PC app) | Install "Samsung Notes" from the Microsoft Store → sign in to your Samsung account → confirm notes have synced |
 | Claude Desktop or Claude Code | [claude.ai/download](https://claude.ai/download) |
 | Python 3.10+ | The installer installs it if missing |
+| Node.js (recommended) | Needed to draw handwritten pages from the note files (`winget install OpenJS.NodeJS.LTS`). Without it, only pages the Samsung Notes PC app has cached are viewable |
 
 ## Install
 
 Double-click **`install.bat`** (if Windows SmartScreen warns you: **More info** → **Run anyway**).
 When it says **"Setup complete"**, restart Claude Desktop / start a new Claude Code session.
 
-The installer creates a private `.venv` in this folder with `mcp<2`, `pillow`
-and `av` (the server uses the mcp v1 `FastMCP` API, which mcp 2.x renamed; `av` reads
-recording durations), then registers
-the server as `samsung-notes` in Claude Desktop and Claude Code.
+The installer creates a private `.venv` in this folder with `mcp<2`, `pillow`, `av`
+and `pymupdf` (the server uses the mcp v1 `FastMCP` API, which mcp 2.x renamed; `av` reads
+recording durations; `pymupdf` turns rendered pages into images). If Node.js is present it
+also runs `npm install` in `render/` for the handwriting renderer. Then it registers the
+server as `samsung-notes` in Claude Desktop and Claude Code.
 
 ## Usage — just ask
 
@@ -59,8 +61,8 @@ the server as `samsung-notes` in Claude Desktop and Claude Code.
 | `samsung_notes_list_note_images` | Imported PDF/photo page backgrounds (no pen strokes) |
 | `samsung_notes_get_page_image` | One of those background images |
 | `samsung_notes_get_thumbnail` | First page as rendered by the app, **with handwriting** |
-| `samsung_notes_list_pages` | Every page and whether its handwriting render is available |
-| `samsung_notes_get_page` | Any page rendered **with handwriting** |
+| `samsung_notes_list_pages` | Every non-blank page of a note |
+| `samsung_notes_get_page` | Any page drawn **with handwriting**, at up to 2048 px wide |
 | `samsung_notes_list_recordings` | A note's voice recordings: file path, size, duration (not transcribed) |
 
 ## Troubleshooting
@@ -71,7 +73,7 @@ the server as `samsung-notes` in Claude Desktop and Claude Code.
 | New notes are missing | Open the Samsung Notes app on this PC once so it syncs |
 | "Samsung Notes is not installed" | Install Samsung Notes from the Microsoft Store and sign in |
 | Python got installed, then setup stopped | Run `install.bat` once more |
-| "That page isn't ready yet" | Open the note in the Samsung Notes PC app and scroll to that page once (Samsung only saves images of pages you've viewed) |
+| "That page isn't ready yet" | The handwriting renderer isn't installed: install Node.js and run `install.bat` again |
 | Anything else | Ask Claude Code "the MCP server in this folder isn't working, fix it" — `CLAUDE.md` has debugging notes |
 
 ## Security & privacy
@@ -85,9 +87,10 @@ the server as `samsung-notes` in Claude Desktop and Claude Code.
 
 - **Handwriting** isn't converted to text. Claude looks at the rendered page as an image instead.
   (For notes written on top of a PDF, the PDF's text is extracted.)
-- Handwritten pages **after the first** only exist as images once you've opened the note in the
-  **PC** app and scrolled to that page. Unviewed pages show as *not ready* in the page list.
-  These cached images are low resolution (~286 px wide).
+- Handwritten pages are drawn from the note's pen-stroke data by
+  [sdocx](https://github.com/twangodev/sdocx), a reverse-engineered renderer. Strokes come out
+  accurately, but the page template (ruled lines, grids) is not drawn, and unusual objects may
+  be skipped. Blank pages are left out of the page list.
 - **Voice recordings** are listed (path, size, length) but not transcribed.
 - You see notes as of the PC app's last sync.
 
@@ -120,8 +123,18 @@ To rotate it: delete `http_secret.txt`, restart the server, and re-add the conne
   for Windows local database: `%LOCALAPPDATA%\Packages\SAMSUNGELECTRONICSCoLtd.SamsungNotes_*\LocalState`
   (`Storage.sqlite` for metadata/text, `wdoc\<uuid>\` for page images/PDFs;
   voice recordings are `.m4a` files in `wdoc\<uuid>\media\` with the same `N@` order prefix).
-- Handwritten pages beyond the first come from the app's own per-page render cache
-  (`Thumbnail\<note-uuid>\<n>\<page-uuid>.jpeg`), ordered via `PageDB`.
+- A note's `wdoc\<uuid>\` folder holds the same files as an exported `.sdocx` (which is a zip
+  of them). The server zips a temp copy and runs `render/render.mjs`, which uses the
+  [`@twango/sdocx`](https://www.npmjs.com/package/@twango/sdocx) WebAssembly build to draw the
+  page as SVG; `pymupdf` rasterises it. Pages written on a tablet can use a wider canvas
+  (e.g. 1600 px) than the note's page size (1080 px), so the viewport is grown to fit every stroke.
+- Page order comes from `PageDB`, or from `pageIdInfo.dat` when `PageDB` has no rows for the
+  note (common for notes written on a phone/tablet).
+- Without Node.js the server falls back to the Samsung Notes app's per-page render cache
+  (`Thumbnail\<note-uuid>\<n>\<page-uuid>.jpeg`, ~286 px). Recent app versions may not
+  write that cache at all; only the first-page thumbnail is guaranteed.
+- Licences: this project is MIT. The renderer it calls, `@twango/sdocx`, is GPL-3.0 and is
+  installed from npm and run as a separate program, not bundled. `pymupdf` is AGPL-3.0.
 - The live DB is snapshot-copied to `%TEMP%` before every read — the Samsung
   Notes app never sees a lock, and nothing is ever written to its data.
 - The OneNote/Microsoft Graph route does **not** work for Samsung Notes

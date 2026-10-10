@@ -63,11 +63,28 @@ Ok "Python found: $python"
 # ── 3. Private environment + packages ────────────────────────
 # A project-local venv keeps this server's packages separate from your
 # global Python. mcp is pinned below 2.0: server.py uses the v1 FastMCP API,
-# which mcp 2.x renamed. av reads voice-recording durations.
-Step "Installing required packages (mcp<2, pillow, av) into .venv"
+# which mcp 2.x renamed. av reads voice-recording durations; pymupdf turns
+# rendered pages into images.
+Step "Installing required packages (mcp<2, pillow, av, pymupdf) into .venv"
 if (-not (Test-Path $venvPy)) { & $python -m venv $venv }
-& $venvPy -m pip install --quiet --upgrade "mcp[cli]<2" pillow av
+& $venvPy -m pip install --quiet --upgrade "mcp[cli]<2" pillow av pymupdf
 Ok "Packages installed"
+
+# ── 3b. Handwriting renderer (optional, needs Node.js) ──────
+# Draws every page's pen strokes from the note files (sdocx, GPL-3.0, run as
+# a separate program). Without it only pages the Samsung Notes app has
+# cached can be viewed.
+Step "Installing the handwriting page renderer (Node.js)"
+$npm = Get-Command npm -ErrorAction SilentlyContinue
+if ($npm) {
+    Push-Location (Join-Path $here "render")
+    & $npm.Source install --silent --no-audit --no-fund
+    Pop-Location
+    Ok "Renderer installed"
+} else {
+    Write-Host "  Node.js not found — skipping. Install it (winget install OpenJS.NodeJS.LTS)" -ForegroundColor Yellow
+    Write-Host "  and run install.bat again to read every handwritten page." -ForegroundColor Yellow
+}
 
 # ── 4. Self-test ─────────────────────────────────────────────
 Step "Test: reading your notes"
